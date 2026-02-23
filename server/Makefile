@@ -1,8 +1,7 @@
 CC=gcc
-CFLAGS=-Wall -Wextra -Werror -pedantic
+CFLAGS=-Wall -Wextra -Werror -pedantic -I$(SRCDIR)/aesd-char-driver
 TARGET=aesdsocket
 
-CFLAGS += -I$(SRCDIR)/aesd-char-driver
 
 all: $(TARGET)
 default: all
