@@ -2,6 +2,8 @@ CC=gcc
 CFLAGS=-Wall -Wextra -Werror -pedantic
 TARGET=aesdsocket
 
+CFLAGS += -I$(SRCDIR)/aesd-char-driver
+
 all: $(TARGET)
 default: all
 
