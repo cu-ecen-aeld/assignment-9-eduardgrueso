@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
 
         syslog(LOG_INFO, "Conexión aceptada desde %s", inet_ntoa(client_addr.sin_addr));
 
-    
+        /* Abrir el driver aesdchar */
         int driver_fd = open("/dev/aesdchar", O_RDWR);
         if (driver_fd < 0) {
             syslog(LOG_ERR, "Error abriendo /dev/aesdchar: %s", strerror(errno));
@@ -104,16 +104,25 @@ int main(int argc, char *argv[]) {
         char *recv_buf = NULL;
         size_t recv_size = 0;
 
+        /* Recibir todo del cliente hasta '\n' */
         while ((bytes = recv(new_fd, buffer, BUFFER_SIZE, 0)) > 0) {
             recv_buf = realloc(recv_buf, recv_size + bytes);
             memcpy(recv_buf + recv_size, buffer, bytes);
             recv_size += bytes;
-            if (memchr(buffer, '\n', bytes)) break;
+            if (memchr(buffer, '\n', bytes))
+                break;
         }
 
         if (recv_buf) {
-            if (strncmp(recv_buf, "AESDCHAR_IOCSEEKTO:", 19) == 0) {
-                unsigned int write_cmd, write_offset;
+            bool is_ioc_cmd = false;
+
+            /* Verificar si el buffer completo es un comando ioctl exacto */
+            if (strncmp(recv_buf, "AESDCHAR_IOCSEEKTO:", 19) == 0
+                && recv_buf[recv_size - 1] == '\n'
+                && strchr(recv_buf + 19, '\n') == (recv_buf + recv_size - 1)) {
+
+                unsigned int write_cmd = 0;
+                unsigned int write_offset = 0;
                 if (sscanf(recv_buf + 19, "%u,%u", &write_cmd, &write_offset) == 2) {
                     struct aesd_seekto seekto;
                     seekto.write_cmd = write_cmd;
@@ -122,9 +131,12 @@ int main(int argc, char *argv[]) {
                     if (ioctl(driver_fd, AESDCHAR_IOCSEEKTO, &seekto) < 0) {
                         syslog(LOG_ERR, "ioctl AESDCHAR_IOCSEEKTO failed: %s", strerror(errno));
                     }
+                    is_ioc_cmd = true;
                 }
             }
-            else {
+
+            /* Si NO fue comando ioctl, escribir en el driver */
+            if (!is_ioc_cmd) {
                 ssize_t w = write(driver_fd, recv_buf, recv_size);
                 if (w < 0) {
                     syslog(LOG_ERR, "write to /dev/aesdchar failed: %s", strerror(errno));
@@ -134,8 +146,7 @@ int main(int argc, char *argv[]) {
             free(recv_buf);
         }
 
-        lseek(driver_fd, 0, SEEK_SET);
-
+        /* Leer desde driver (usando f_pos actual) y enviar al cliente */
         while ((bytes = read(driver_fd, buffer, BUFFER_SIZE)) > 0) {
             send(new_fd, buffer, bytes, 0);
         }
