@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# Simple init script for aesdsocket
+#
+### BEGIN INIT INFO
+# Provides:          aesdsocket
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     S
+# Default-Stop:
+# Short-Description: Start aesdsocket at boot time
+### END INIT INFO
+
+case "$1" in
+    start)
+        logger "Starting aesdsocket"
+        /usr/bin/aesdsocket -d &
+        ;;
+    stop)
+        logger "Stopping aesdsocket"
+        killall aesdsocket
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac
+
+exit 0
