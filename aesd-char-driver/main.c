@@ -23,6 +23,7 @@
 
 #include "aesdchar.h"
 #include "aesd-circular-buffer.h"
+#include "aesd_ioctl.h"
 
 
 int aesd_major =   1; // use dynamic major
@@ -160,6 +161,8 @@ struct file_operations aesd_fops = {
     .write =    aesd_write,
     .open =     aesd_open,
     .release =  aesd_release,
+    .llseek =   aesd_llseek,
+    .unlocked_ioctl = aesd_unlocked_ioctl,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)
@@ -221,6 +224,88 @@ void aesd_cleanup_module(void)
     unregister_chrdev_region(devno, 1);
 }
 
+loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
+{
+    struct aesd_dev *dev = filp->private_data;
+    size_t total_bytes = 0;
+    size_t i;
+
+    if (mutex_lock_interruptible(&dev->lock))
+        return -ERESTARTSYS;
+
+    for (i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
+        if (!dev->buffer.entry[i].buffptr)
+            break;
+        total_bytes += dev->buffer.entry[i].size;
+    }
+
+    mutex_unlock(&dev->lock);
+
+    switch (whence) {
+        case SEEK_SET:
+            if (offset < 0 || offset > total_bytes)
+                return -EINVAL;
+            filp->f_pos = offset;
+            break;
+        case SEEK_CUR:
+            if ((filp->f_pos + offset) < 0 ||
+                (filp->f_pos + offset) > total_bytes)
+                return -EINVAL;
+            filp->f_pos += offset;
+            break;
+        case SEEK_END:
+            if (offset > 0 || ((loff_t)total_bytes + offset) < 0)
+                return -EINVAL;
+            filp->f_pos = total_bytes + offset;
+            break;
+        default:
+            return -EINVAL;
+    }
+
+    return filp->f_pos;
+}
+
+long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    struct aesd_seekto seekto;
+    struct aesd_dev *dev = filp->private_data;
+    size_t write_count = 0;
+    size_t cumulative = 0;
+    size_t i;
+
+    if (_IOC_TYPE(cmd) != AESD_IOC_MAGIC || _IOC_NR(cmd) > AESDCHAR_IOC_MAXNR)
+        return -EINVAL;
+
+    if (copy_from_user(&seekto, (void __user *)arg, sizeof(seekto)))
+        return -EFAULT;
+
+    if (mutex_lock_interruptible(&dev->lock))
+        return -ERESTARTSYS;
+
+    for (i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
+        if (!dev->buffer.entry[i].buffptr)
+            break;
+        write_count++;
+    }
+
+    if (seekto.write_cmd >= write_count) {
+        mutex_unlock(&dev->lock);
+        return -EINVAL;
+    }
+
+    for (i = 0; i < seekto.write_cmd; i++)
+        cumulative += dev->buffer.entry[i].size;
+
+    if (seekto.write_cmd_offset >= dev->buffer.entry[seekto.write_cmd].size) {
+        mutex_unlock(&dev->lock);
+        return -EINVAL;
+    }
+
+    filp->f_pos = cumulative + seekto.write_cmd_offset;
+
+    mutex_unlock(&dev->lock);
+    return 0;
+}
 
 
 module_init(aesd_init_module);

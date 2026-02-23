@@ -34,5 +34,7 @@ struct aesd_dev
     size_t pending_write_size; 
 };
 
+loff_t aesd_llseek(struct file *filp, loff_t offset, int whence);
+long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
 #endif /* AESD_CHAR_DRIVER_AESDCHAR_H_ */
