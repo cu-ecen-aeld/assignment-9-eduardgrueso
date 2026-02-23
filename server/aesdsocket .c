@@ -13,7 +13,7 @@
 #include <stdbool.h>
 
 #include <sys/ioctl.h>
-#include "aesd_ioctl.h"
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 #define PORT 9000
 #define BUFFER_SIZE 1024
